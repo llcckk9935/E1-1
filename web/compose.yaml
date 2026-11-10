@@ -1,0 +1,10 @@
+services:
+  web:
+    image: workshop-web:2.0
+    environment:
+      NGINX_PORT: "8080"
+    ports:
+      - "8082:8080"
+  helper:
+    image: alpine
+    command: sleep 3600
