@@ -125,6 +125,40 @@ WSL의 실제 web 폴더를 컨테이너의 HTML 폴더에 연결했다. 호스�
 
 기록의 `/home/llcckk/workshop/web`은 학습자 경로다. 다른 컴퓨터에서는 자신의 실제 폴더 경로로 바꿔야 한다. 현재 제출 Compose는 바인드 마운트를 사용하지 않으며 최종 화면의 제목으로 연결 방식을 판단하지 않는다.
 
+**최종 소스로 처음부터 재현하기 — Ubuntu/WSL Bash:** 아래 절차는 저장소를 clone한 뒤 저장소 루트에서 시작한다. 과거 1.0 이미지와 web-live 컨테이너는 필요 없다. 임시 검증 폴더는 기존에 없는 이름을 사용하고 8083 포트가 비어 있어야 한다.
+
+```bash
+cd web
+docker build -t workshop-web:2.0 .
+mkdir bind-v2-demo
+echo "bind-v2-before" > bind-v2-demo/bind-check.txt
+chmod 755 bind-v2-demo
+chmod 644 bind-v2-demo/bind-check.txt
+docker run -d --name workshop-bind-v2-demo \
+  -e NGINX_PORT=8080 \
+  -p 127.0.0.1:8083:8080 \
+  --mount "type=bind,source=$(pwd)/bind-v2-demo,target=/usr/share/nginx/html,readonly" \
+  workshop-web:2.0
+curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:8083/bind-check.txt
+echo "bind-v2-after" > bind-v2-demo/bind-check.txt
+curl --fail http://127.0.0.1:8083/bind-check.txt
+```
+
+확인할 결과는 첫 응답 bind-v2-before, 두 번째 응답 bind-v2-after다. 이는 기대값이며 실제 실행 출력은 검증 기록에서 따로 관리한다. 두 요청 사이 빌드·재시작은 하지 않는다. 환경 변수와 포트 매핑 오른쪽을 8080으로 일치시켰으며, `$(pwd)`는 위에서 이동한 현재 web 폴더의 절대 경로다. readonly는 컨테이너 측 쓰기를 막지만 호스트의 파일 수정은 허용한다. 같은 이름의 컨테이너가 이미 있으면 다른 새 이름을 사용하며 기존 컨테이너를 임의로 삭제하지 않는다.
+
+실습 후 이번에 만든 자원만 정리한다.
+
+```bash
+docker rm -f workshop-bind-v2-demo
+rm bind-v2-demo/bind-check.txt
+rmdir bind-v2-demo
+cd ..
+```
+
+같은 검증을 새 컨테이너·임시 폴더로 자동 실행하고 명령과 응답을 저장하려면 저장소 루트에서 `bash scripts/verify-bind-v2.sh`를 사용한다. [검증 구성·실행 상태](evidence/ch07/bind-v2.md), [자동 검증 스크립트](scripts/verify-bind-v2.sh).
+
+**실제 독립 검증 통과:** 새 컨테이너에서 `listen 8080;`과 바인드 연결을 확인했고, 재빌드·재시작 없이 응답이 `bind-v2-before` → `bind-v2-after`로 바뀌었다. 생성한 자원 정리까지 PASS다. [명령·실제 응답 전체 로그](evidence/ch07/bind-v2-runtime.log). 폴더 755·파일 644는 NGINX가 경로에 진입하고 파일을 읽도록 지정한 권한이다. 최초 임시 폴더 700으로 발생한 403 및 수정 과정도 [검증 기록](evidence/ch07/bind-v2.md)에 보관했다.
+
 ### Docker 볼륨
 
 `workshop-data`를 `/data`에 연결해 메모를 저장했다. 재검증에서 `volume-test2` 삭제 후 새 `volume-test3`에 같은 볼륨을 연결해 동일한 메모를 읽었다. [명령과 삭제 전후 실제 출력](evidence/ch07/volume.md).
