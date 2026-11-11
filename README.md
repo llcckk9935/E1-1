@@ -6,6 +6,96 @@ Windows 노트북에 WSL 2 Ubuntu와 Docker Desktop을 연결하고, 직접 작�
 
 아래 실제 검증과 학습자 보고를 구분한다. 명령 예시를 실제 성공 출력으로 취급하지 않는다. 모든 검증 증거는 이 문서의 상대 링크로 연결한다.
 
+## 사전평가 미통과 항목의 직접 증거와 보완
+
+평가 시각 2026-11-10 21:20:01의 결과에 대응한다. #4·#5의 실제 출력은 기존 기록에 있었으나 발견하기 쉽게 README에 직접 제시한다. 아래는 최초 실습 당시 제공받은 전체 출력이며 현재 시각의 재실행 결과가 아니다. 당시 정확한 실행 시각은 미수집이므로 만들지 않는다.
+
+### #4 hello-world 실행 전체 출력
+
+실행 명령:
+
+```bash
+docker run hello-world
+```
+
+실제 출력:
+
+```text
+Unable to find image 'hello-world:latest' locally
+latest: Pulling from library/hello-world
+4f55086f7dd0: Pull complete
+d5e71e642bf5: Download complete
+Digest: sha256:c567b231f65614688711a75f31518a064258a51d442117a3e771a3a8fdba78ef
+Status: Downloaded newer image for hello-world:latest
+
+Hello from Docker!
+This message shows that your installation appears to be working correctly.
+
+To generate this message, Docker took the following steps:
+ 1. The Docker client contacted the Docker daemon.
+ 2. The Docker daemon pulled the "hello-world" image from the Docker Hub.
+    (amd64)
+ 3. The Docker daemon created a new container from that image which runs the
+    executable that produces the output you are currently reading.
+ 4. The Docker daemon streamed that output to the Docker client, which sent it
+    to your terminal.
+
+To try something more ambitious, you can run an Ubuntu container with:
+ $ docker run -it ubuntu bash
+
+Share images, automate workflows, and more with a free Docker ID:
+ https://hub.docker.com/
+
+For more examples and ideas, visit:
+ https://docs.docker.com/get-started/
+```
+
+[원본 기록](evidence/ch05/docker.md). 정상 메시지와 아래 Exited (0)으로 실행·정상 종료를 함께 확인했다.
+
+### #5 이미지 목록과 전체 컨테이너 목록
+
+동일 초기 실습 흐름에서 실행한 `docker images`의 제공된 전체 출력:
+
+```text
+i Info →   U  In Use
+IMAGE                ID             DISK USAGE   CONTENT SIZE   EXTRA
+hello-world:latest   c567b231f656       25.9kB         9.49kB    U
+```
+
+이어서 실행한 `docker ps -a`의 제공된 전체 출력:
+
+```text
+CONTAINER ID   IMAGE         COMMAND    CREATED         STATUS                     PORTS     NAMES
+121cbcd88298   hello-world   "/hello"   4 minutes ago   Exited (0) 4 minutes ago             affectionate_pascal
+```
+
+당시 hello-world 이미지·컨테이너만 존재하던 시점의 목록이다. 이후 이미지와 컨테이너가 추가된 기록은 [운영 기록](evidence/ch05/docker.md)과 [Compose 기록](evidence/ch08/compose.md)에 있다. images는 이미지 목록, ps -a는 정지된 것을 포함한 컨테이너 목록으로 대상이 다르다.
+
+### #16 포트 충돌 진단·해제
+
+[전체 진단·해제 절차](docs/port-conflict.md): Docker 점유 컨테이너 조회 → WSL의 ss 및 Windows의 프로세스 조회 → 확인한 실습 서비스 정상 종료 또는 호스트 포트 변경 → 재조회와 curl 검증 순서다. 실제로 발생하지 않은 충돌 로그는 만들지 않았다.
+
+```bash
+docker ps --filter publish=8082 --format 'table {{.ID}}\t{{.Names}}\t{{.Ports}}'
+sudo ss -ltnp 'sport = :8082'
+```
+
+내 Compose web 서비스가 점유 중이고 중지해도 되는 경우 `docker compose stop web`으로 해제한다. 다른 서비스라면 소유자를 확인하고 종료하거나, 호스트 포트를 8084로 바꾸고 브라우저 주소도 함께 바꾼다. WSL의 빈 ss 목록만으로 Windows 측 포트까지 비었다고 판단하지 않는다.
+
+### #17 백업과 데이터 손실 방지
+
+[볼륨 백업·새 볼륨 복원 절차](docs/volume-backup.md): 쓰기 중지 → 원본 볼륨 읽기 전용 연결 → 호스트에 tar 백업 → 목록·체크섬 확인 → 새 빈 볼륨에 복원 → 메모·서비스 검증. 원본 볼륨 삭제 없이 복원부터 시험한다. DB는 전용 dump 도구를 사용하고 별도 장치·원격 백업 및 암호화를 고려한다. 절차 문서이며 미실행 복원 성공을 주장하지 않는다.
+
+### 나머지 권장 보완의 요약
+
+- 권한 실험 목적: 파일의 소유자 w를 제거해 쓰기 거부를 확인하고, 디렉터리 x를 제거해 진입 거부를 확인했다. r=4, w=2, x=1이며 644는 rw-/r--/r--, 755는 rwx/r-x/r-x다. 실제 접근에는 부모 경로·ACL 등도 영향을 줄 수 있다.
+- 흐름: Dockerfile로 이미지 빌드 → Compose로 컨테이너 실행 → 호스트 포트로 브라우저 접속. COPY 파일 변경은 재빌드 후 컨테이너 교체가 필요하다.
+- 정확한 빌드 명령은 `docker build -t workshop-web:2.0 .`이다. -t는 tag(이미지 이름·태그), 점은 현재 빌드 컨텍스트이며 별도 --platform은 지정하지 않았다.
+- 본문 Bash 명령은 WSL Ubuntu에서 실행한다. PowerShell의 같은 이름 명령이 같은 옵션을 뜻하지 않으며 `/home/...`와 Windows 경로도 다르다.
+- 컨테이너는 별도 네트워크 네임스페이스를 사용한다. Compose 내부 서비스 간 통신과 호스트 포트 공개는 구분한다.
+- 경로 대응: 호스트의 새 bind-v2-demo 폴더 → 컨테이너 /usr/share/nginx/html, Docker 볼륨 workshop-data → 컨테이너 /data.
+- 최종 브라우저 주소 localhost:8082의 [실제 화면 파일](evidence/ch07/port-8082.png)과 동일 포트 매핑은 [포트 기록](evidence/ch07/ports.md)에 연결했다. curl 기반 바인드 검증은 별도 8083 실험으로 [전체 로그](evidence/ch07/bind-v2-runtime.log)에 기록했다.
+
 ## 1. 실행 환경
 
 | 항목 | 확인한 환경 |
